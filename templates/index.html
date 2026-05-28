@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Groq AI Chat</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg:       #0a0a0f;
+    --surface:  #111118;
+    --border:   #1e1e2e;
+    --accent:   #7c3aed;
+    --accent2:  #06b6d4;
+    --text:     #e2e8f0;
+    --muted:    #64748b;
+    --user-bg:  #1e1030;
+    --ai-bg:    #0f1923;
+    --glow:     rgba(124,58,237,.35);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Syne', sans-serif;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── noise overlay ── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.04'/%3E%3C/svg%3E");
+    background-size: 180px;
+    opacity: .6;
+  }
+
+  /* ── header ── */
+  header {
+    position: relative; z-index: 10;
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 14px;
+    background: linear-gradient(180deg, #12121a 0%, transparent 100%);
+    backdrop-filter: blur(12px);
+  }
+  .logo-ring {
+    width: 40px; height: 40px; border-radius: 12px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+    box-shadow: 0 0 20px var(--glow);
+    flex-shrink: 0;
+  }
+  header h1 { font-size: 1.1rem; font-weight: 800; letter-spacing: -.02em; }
+  header h1 span { color: var(--accent2); }
+  .model-tag {
+    margin-left: auto;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .65rem; color: var(--muted);
+    border: 1px solid var(--border);
+    padding: 4px 10px; border-radius: 999px;
+  }
+  .status-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: #22c55e;
+    box-shadow: 0 0 6px #22c55e;
+    animation: pulse 2s infinite;
+    flex-shrink: 0;
+  }
+  @keyframes pulse {
+    0%,100% { opacity: 1; } 50% { opacity: .4; }
+  }
+
+  /* ── messages ── */
+  #messages {
+    flex: 1; overflow-y: auto; padding: 24px 16px;
+    display: flex; flex-direction: column; gap: 18px;
+    position: relative; z-index: 1;
+    scroll-behavior: smooth;
+  }
+  #messages::-webkit-scrollbar { width: 4px; }
+  #messages::-webkit-scrollbar-track { background: transparent; }
+  #messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .msg {
+    display: flex; gap: 12px; max-width: 780px;
+    animation: fadeUp .3s ease both;
+  }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .msg.user { margin-left: auto; flex-direction: row-reverse; }
+
+  .avatar {
+    width: 32px; height: 32px; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; flex-shrink: 0; align-self: flex-end;
+  }
+  .msg.ai   .avatar { background: linear-gradient(135deg,var(--accent),var(--accent2)); }
+  .msg.user .avatar { background: #1e293b; border: 1px solid var(--border); }
+
+  .bubble {
+    padding: 12px 16px; border-radius: 16px;
+    line-height: 1.65; font-size: .9rem;
+    max-width: calc(100% - 52px);
+    word-break: break-word;
+    white-space: pre-wrap;
+  }
+  .msg.ai   .bubble { background: var(--ai-bg);   border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+  .msg.user .bubble { background: var(--user-bg); border: 1px solid #2d1b5e; border-bottom-right-radius: 4px; }
+
+  /* code inside bubbles */
+  .bubble code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .8rem;
+    background: #0d0d1a;
+    border: 1px solid var(--border);
+    padding: 2px 6px; border-radius: 4px;
+  }
+  .bubble pre {
+    background: #0d0d1a;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    overflow-x: auto;
+    margin-top: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .78rem;
+    line-height: 1.6;
+  }
+  .bubble pre code { background: none; border: none; padding: 0; }
+
+  /* thinking animation */
+  .typing-bubble { display: flex; align-items: center; gap: 5px; padding: 14px 18px; }
+  .typing-bubble span {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--accent);
+    animation: bounce .9s infinite ease-in-out;
+  }
+  .typing-bubble span:nth-child(2) { animation-delay: .15s; background: var(--accent2); }
+  .typing-bubble span:nth-child(3) { animation-delay: .30s; }
+  @keyframes bounce {
+    0%,80%,100% { transform: scale(.7); opacity:.5; }
+    40%         { transform: scale(1);  opacity: 1; }
+  }
+
+  /* ── empty state ── */
+  #empty {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    text-align: center; pointer-events: none; opacity: .45;
+  }
+  #empty .icon { font-size: 3rem; margin-bottom: 12px; }
+  #empty p { font-size: .85rem; color: var(--muted); }
+
+  /* ── input bar ── */
+  #inputbar {
+    position: relative; z-index: 10;
+    padding: 14px 16px 18px;
+    border-top: 1px solid var(--border);
+    background: linear-gradient(0deg, #0c0c14 0%, transparent 100%);
+    backdrop-filter: blur(12px);
+  }
+  .input-wrap {
+    display: flex; gap: 10px; align-items: flex-end;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 10px 10px 10px 16px;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  .input-wrap:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(124,58,237,.15);
+  }
+  #userInput {
+    flex: 1; background: none; border: none; outline: none;
+    color: var(--text); font-family: 'Syne', sans-serif; font-size: .9rem;
+    resize: none; max-height: 120px; min-height: 24px; line-height: 1.5;
+  }
+  #userInput::placeholder { color: var(--muted); }
+  #sendBtn {
+    width: 38px; height: 38px; border-radius: 10px; border: none; cursor: pointer;
+    background: linear-gradient(135deg,var(--accent),var(--accent2));
+    color: #fff; font-size: 16px;
+    display: flex; align-items: center; justify-content: center;
+    transition: transform .15s, opacity .15s;
+    flex-shrink: 0;
+  }
+  #sendBtn:hover:not(:disabled) { transform: scale(1.07); }
+  #sendBtn:disabled { opacity: .4; cursor: not-allowed; transform: none; }
+
+  .hint {
+    text-align: center; font-size: .7rem; color: var(--muted);
+    margin-top: 8px; font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* ── clear btn ── */
+  .clear-btn {
+    background: none; border: 1px solid var(--border); color: var(--muted);
+    font-family: 'Syne', sans-serif; font-size: .72rem; padding: 4px 12px;
+    border-radius: 999px; cursor: pointer; transition: color .2s, border-color .2s;
+  }
+  .clear-btn:hover { color: var(--text); border-color: var(--muted); }
+
+  /* ── responsive ── */
+  @media(min-width:640px) {
+    #messages { padding: 32px 24px; }
+    .msg { max-width: 68%; }
+    .input-wrap { padding: 12px 12px 12px 20px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo-ring">🤖</div>
+  <div>
+    <h1>Groq<span>Chat</span></h1>
+  </div>
+  <div class="status-dot"></div>
+  <span class="model-tag">gpt-oss-120b</span>
+  <button class="clear-btn" onclick="clearChat()">Clear</button>
+</header>
+
+<div id="messages">
+  <div id="empty">
+    <div class="icon">✦</div>
+    <p>Send a message to start chatting</p>
+  </div>
+</div>
+
+<div id="inputbar">
+  <div class="input-wrap">
+    <textarea id="userInput" rows="1" placeholder="Ask me anything…"></textarea>
+    <button id="sendBtn" onclick="sendMessage()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </div>
+  <p class="hint">Enter to send · Shift+Enter for newline</p>
+</div>
+
+<script>
+  const messagesEl = document.getElementById("messages");
+  const inputEl    = document.getElementById("userInput");
+  const sendBtn    = document.getElementById("sendBtn");
+  const emptyEl    = document.getElementById("empty");
+
+  let history = [];
+
+  // ── auto-grow textarea ──────────────────────
+  inputEl.addEventListener("input", () => {
+    inputEl.style.height = "auto";
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + "px";
+  });
+
+  // ── Enter to send ───────────────────────────
+  inputEl.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  // ── helpers ─────────────────────────────────
+  function scrollBottom() {
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function formatText(text) {
+    // Simple code block + inline code rendering
+    text = text.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) =>
+      `<pre><code>${escHtml(code.trim())}</code></pre>`);
+    text = text.replace(/`([^`]+)`/g, (_, c) => `<code>${escHtml(c)}</code>`);
+    return text;
+  }
+
+  function escHtml(t) {
+    return t.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  }
+
+  function appendMsg(role, text, isTyping = false) {
+    if (emptyEl) emptyEl.style.display = "none";
+
+    const div = document.createElement("div");
+    div.className = `msg ${role}`;
+
+    const avatar = document.createElement("div");
+    avatar.className = "avatar";
+    avatar.textContent = role === "ai" ? "✦" : "👤";
+
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+
+    if (isTyping) {
+      bubble.innerHTML = `<div class="typing-bubble"><span></span><span></span><span></span></div>`;
+      div.id = "typing-indicator";
+    } else {
+      bubble.innerHTML = formatText(text);
+    }
+
+    div.appendChild(avatar);
+    div.appendChild(bubble);
+    messagesEl.appendChild(div);
+    scrollBottom();
+    return div;
+  }
+
+  function removeTyping() {
+    const el = document.getElementById("typing-indicator");
+    if (el) el.remove();
+  }
+
+  // ── send ─────────────────────────────────────
+  async function sendMessage() {
+    const text = inputEl.value.trim();
+    if (!text || sendBtn.disabled) return;
+
+    appendMsg("user", text);
+    history.push({ role: "user", content: text });
+
+    inputEl.value = "";
+    inputEl.style.height = "auto";
+    sendBtn.disabled = true;
+
+    appendMsg("ai", "", true); // typing indicator
+
+    try {
+      const res  = await fetch("/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text, history: history.slice(0, -1) })
+      });
+      const data = await res.json();
+      removeTyping();
+
+      if (data.error) {
+        appendMsg("ai", "⚠️ Error: " + data.error);
+      } else {
+        appendMsg("ai", data.reply);
+        history.push({ role: "assistant", content: data.reply });
+      }
+    } catch (err) {
+      removeTyping();
+      appendMsg("ai", "⚠️ Network error. Please try again.");
+    }
+
+    sendBtn.disabled = false;
+    inputEl.focus();
+    scrollBottom();
+  }
+
+  // ── clear ────────────────────────────────────
+  function clearChat() {
+    history = [];
+    messagesEl.innerHTML = "";
+    messagesEl.appendChild(emptyEl);
+    emptyEl.style.display = "";
+  }
+</script>
+</body>
+</html>
